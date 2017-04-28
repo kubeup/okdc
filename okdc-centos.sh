@@ -1,5 +1,6 @@
 #!/bin/sh
 
+VERSION=v1.0
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=`uname -m`
 OS=`lsb_release -is`
@@ -19,13 +20,15 @@ KUBE_ALIYUN_IMG=registry.aliyuncs.com/kubeup/kube-aliyun
 POD_IP_RANGE=10.244.0.0/16
 TOKEN=${TOKEN:-`python -c 'import random,string as s;t=lambda l:"".join(random.choice(s.ascii_lowercase + s.digits) for _ in range(l));print t(6)+"."+t(16)'`}
 
-function readtty {
+readtty() {
 	read "$@" </dev/tty
 }
 
-function intro {
+intro() {
 	cat 1>&2 <<-END
-	This tool will help you provision Kubernetes $K8S_VERSION master on this machine. 
+	OKDC $VERSION
+	One-liner Kubernetes Deployment in China
+	This will help you provision Kubernetes $K8S_VERSION master on this machine. 
 
 	The following mirrors will be used due to inaccessibility of official resources.
 	$REPO
@@ -40,7 +43,7 @@ function intro {
 	[ "$INPUT" != "y" ] && echo "Abort" && exit 0
 }
 
-function install_calico_with_etcd {
+install_calico_with_etcd() {
 	[ -z "$DOCKER_MIRROR" ] && echo "Can't install Calico without a docker mirror. Abort" && exit 3
 	if [ $MEM -lt 1500000 ]; then
 		readtty -n1 -p "Your memory is not really enough for running k8s master with Calico. This will result in serious performance issues. Are you sure? (y/N) " INPUT
@@ -52,14 +55,14 @@ function install_calico_with_etcd {
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/calico.yaml
 }
 
-function install_flannel {
+install_flannel() {
 	wget -O /tmp/flannel.yaml https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
 	sed -i "s/quay\.io\/coreos/${REGISTRY_PREFIX//\//\\/}/g" /tmp/flannel.yaml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel-rbac.yml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/flannel.yaml
 }
 
-function install_network {
+install_network() {
 	while :; do
 		echo "Available network layer:"
 		echo "1) Flannel"
@@ -84,7 +87,7 @@ function install_network {
 	done
 }
 
-function setup_aliyun {
+setup_aliyun() {
 #readtty -n 1 -p "Deploy kube-aliyun as well? (to enable SLB, Routes and Volumes support) (Y/n)? " ENABLE_KUBE_ALIYUN
 #[ -z $ENABLE_KUBE_ALIYUN ] && ENABLE_KUBE_ALIYUN=y
 #
@@ -103,7 +106,7 @@ function setup_aliyun {
 	echo
 }
 
-function update_yum {
+update_yum() {
 	# Update yum repo
 	cat >/etc/pki/rpm-gpg/$GPG_FILE <<-END
 	-----BEGIN PGP PUBLIC KEY BLOCK-----
@@ -141,7 +144,7 @@ function update_yum {
 	yum install -y kubectl kubernetes-cni docker kubelet kubeadm
 }
 
-function update_kubelet {
+update_kubelet() {
 	# Kubelet droplet
 	mkdir -p `dirname $KUBELET_DROPLET`
 	cat >$KUBELET_DROPLET <<-END
@@ -155,14 +158,14 @@ function update_kubelet {
 	chmod +x $KUBELET_DROPLET
 }
 
-function patch_kubelet {
+patch_kubelet() {
 	# Due to an issue of kubeadm, we need to switch to cni network after kubeadm is done. #43815
 	sed -i "/kubenet/d" $KUBELET_DROPLET 
 	systemctl daemon-reload
 	systemctl restart kubelet
 }
 
-function set_accelerator {
+set_accelerator() {
 	DOCKER_MIRROR=`python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]'`
 	if [ -n "$DOCKER_MIRROR" ]; then
 		readtty -p "Docker registry mirror, ex. Aliyun accelerator? (default: $DOCKER_MIRROR) " INPUT
@@ -183,7 +186,7 @@ function set_accelerator {
 	fi
 }
 
-function run_kubeadm {
+run_kubeadm() {
 	# Kubeadm config
 	cat >/tmp/kubeadm.conf <<-END
 	apiVersion: kubeadm.k8s.io/v1alpha1
@@ -197,7 +200,7 @@ function run_kubeadm {
 	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_ETCD_IMAGE=$ETCD_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm init --skip-preflight-checks --config /tmp/kubeadm.conf
 }
 
-function enable_services {
+enable_services() {
 # Disable SELinux 
 	setenforce 0
 
@@ -208,7 +211,7 @@ function enable_services {
 }
 
 
-function main {
+main() {
 	if [ "$OS" != "CentOS" ]; then
 		echo "This script only works on CentOS" 1>&2
 		exit 1

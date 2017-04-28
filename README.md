@@ -1,4 +1,4 @@
-# One-liner Kubernetes Deployer in China
+# One-liner Kubernetes Deployment in China aka OKDC
 
 Deploy fully functional Kubernetes in China with a one-liner
 
@@ -6,11 +6,15 @@ Deploy fully functional Kubernetes in China with a one-liner
 
 Automate the process, save some time, and stab GFW in the ass.
 
+## What's Included
+
+Kubernetes, Etcd, Network layer (flannel, calico), GFW related issues.
+
 ## Usage
 
 Run on master:
 
-`curl -s https://raw.githubusercontent.com/ledzep2/k8s-deploy-cn/master/deploy-centos.sh|sh`
+`curl -s https://raw.githubusercontent.com/kubeup/okdc/master/okdc-centos.sh|sh`
 
 Command for nodes will show up after master is done.
 
@@ -24,5 +28,5 @@ Command for nodes will show up after master is done.
 
 ## Caveats
 
-You need a docker registry mirror address to install Calico. If you don't have that, 
-use flannel instead.
+You need a docker registry mirror address to install Calico (try Aliyun Accelerator). 
+If you don't have that, use flannel instead.
