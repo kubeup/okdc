@@ -8,7 +8,7 @@ Automate the process, save some time, and stab GFW in the ass.
 
 ## What's Included
 
-Kubernetes, Etcd, Network layer (flannel, calico), GFW related issues.
+Kubernetes, Etcd, Network layer (flannel, calico), GFW related workarounds.
 
 ## Usage
 
@@ -24,7 +24,7 @@ Command for nodes will show up after master is done.
 
 ## Supported Kubernetes Version
 
-- v1.6.1
+- v1.6.2
 
 ## Caveats
 

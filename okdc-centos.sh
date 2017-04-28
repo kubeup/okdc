@@ -2,23 +2,24 @@
 
 VERSION=v1.0
 GPG_FILE=RPM-GPG-KEY-k8s
-ARCH=`uname -m`
-OS=`lsb_release -is`
-OS_VERSION=`rpm -q --queryformat '%{VERSION}' centos-release`
-MEM=`cat /proc/meminfo |grep MemTotal|awk '{print $2}'`
+ARCH=$(uname -m)
+OS=$(lsb_release -is)
+OS_VERSION=$(rpm -q --queryformat '%{VERSION}' centos-release)
+MEM=$(cat /proc/meminfo |grep MemTotal|awk '{print $2}')
 ADMIN_CONF=/etc/kubernetes/admin.conf
 KUBELET_DROPLET=/etc/systemd/system/kubelet.service.d/99-kubelet-droplet.conf
+OKDC_BASE=https://raw.githubusercontent.com/kubeup/okdc/master
 
 # User tweakable vars
-REPO=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH
-REGISTRY_PREFIX=registry.aliyuncs.com/archon
-K8S_VERSION=v1.6.1
-PAUSE_IMG=$REGISTRY_PREFIX/pause-amd64:3.0
-HYPERKUBE_IMG=$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION
-ETCD_IMG=$REGISTRY_PREFIX/etcd:3.0.17
-KUBE_ALIYUN_IMG=registry.aliyuncs.com/kubeup/kube-aliyun
-POD_IP_RANGE=10.244.0.0/16
-TOKEN=${TOKEN:-`python -c 'import random,string as s;t=lambda l:"".join(random.choice(s.ascii_lowercase + s.digits) for _ in range(l));print t(6)+"."+t(16)'`}
+REPO=${REPO:-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH}
+REGISTRY_PREFIX=${REGISTRY_PREFIX:-registry.aliyuncs.com/archon}
+K8S_VERSION=${K8S_VERSION:-v1.6.2}
+PAUSE_IMG=${PAUSE_IMG:-$REGISTRY_PREFIX/pause-amd64:3.0}
+HYPERKUBE_IMG=${HYPERKUBE_IMG:-$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION}
+ETCD_IMG=${ETCD_IMG:-$REGISTRY_PREFIX/etcd:3.0.17}
+KUBE_ALIYUN_IMG=${KUBE_ALIYUN_IMG:-registry.aliyuncs.com/kubeup/kube-aliyun}
+POD_IP_RANGE=${POD_IP_RANGE:-10.244.0.0/16}
+TOKEN=${TOKEN:-$(python -c 'import random,string as s;t=lambda l:"".join(random.choice(s.ascii_lowercase + s.digits) for _ in range(l));print t(6)+"."+t(16)')}
 
 readtty() {
 	read "$@" </dev/tty
@@ -26,8 +27,10 @@ readtty() {
 
 intro() {
 	cat 1>&2 <<-END
-	OKDC $VERSION
+	OKDC $VERSION by kubeup
 	One-liner Kubernetes Deployment in China
+	http://github.com/kubeup/okdc
+
 	This will help you provision Kubernetes $K8S_VERSION master on this machine. 
 
 	The following mirrors will be used due to inaccessibility of official resources.
@@ -38,7 +41,9 @@ intro() {
 	You will be prompted to input custom docker hub mirror and preferred network layer.
 
 	END
+}
 
+pause() {
 	readtty -p "Are you sure to continue? (y/N) " INPUT 
 	[ "$INPUT" != "y" ] && echo "Abort" && exit 0
 }
@@ -67,8 +72,8 @@ install_network() {
 		echo "Available network layer:"
 		echo "1) Flannel"
 		echo "2) Calico (mem>1.5G && requires a docker mirror)"
-		echo "3) skip "
-		readtty -n1 -p "Choose one to install " INPUT
+		echo "3) Skip "
+		readtty -n1 -p "Choose one to install: " INPUT
 		case $INPUT in
 			1)
 				install_flannel
@@ -77,14 +82,15 @@ install_network() {
 				install_calico_with_etcd
 				;;
 			3)
-				echo "Skipped."
+				echo -e "\nSkipped."
 				;;
 			*)
-				echo "Huh??"
+				echo -e "\nHuh??"
 				continue
 		esac
 		break
 	done
+	echo
 }
 
 setup_aliyun() {
@@ -146,7 +152,7 @@ update_yum() {
 
 update_kubelet() {
 	# Kubelet droplet
-	mkdir -p `dirname $KUBELET_DROPLET`
+	mkdir -p $(dirname $KUBELET_DROPLET)
 	cat >$KUBELET_DROPLET <<-END
 	[Unit]
 	Wants=flexv.service
@@ -166,7 +172,7 @@ patch_kubelet() {
 }
 
 set_accelerator() {
-	DOCKER_MIRROR=`python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]'`
+	DOCKER_MIRROR=$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]')
 	if [ -n "$DOCKER_MIRROR" ]; then
 		readtty -p "Docker registry mirror, ex. Aliyun accelerator? (default: $DOCKER_MIRROR) " INPUT
 		[ -z "$INPUT" ] && echo "No changes made to registry mirror" && return
@@ -197,7 +203,8 @@ run_kubeadm() {
 	token: $TOKEN
 	END
 
-	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_ETCD_IMAGE=$ETCD_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm init --skip-preflight-checks --config /tmp/kubeadm.conf
+	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_ETCD_IMAGE=$ETCD_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm init --skip-preflight-checks --config /tmp/kubeadm.conf |tee /tmp/kubeadm.log
+	MASTER_IP=$( grep "kubeadm join" /tmp/kubeadm.log|awk '{print $5}' )
 }
 
 enable_services() {
@@ -210,8 +217,18 @@ enable_services() {
 	systemctl enable kubelet && systemctl start kubelet
 }
 
+show_node_cmd() {
+	[ -z "$MASTER_IP" ] && exit 3
+	echo
+	echo Run the following command on your nodes to join the cluster
+	echo
+	echo "curl -s $OKDC_BASE/okdc-centos-node.sh|TOKEN=$TOKEN MASTER=$MASTER_IP sh"
+}
+
 
 main() {
+	intro
+
 	if [ "$OS" != "CentOS" ]; then
 		echo "This script only works on CentOS" 1>&2
 		exit 1
@@ -222,7 +239,8 @@ main() {
 		 exit 1
 	fi
 
-	intro
+	pause
+
 	update_yum
 	update_kubelet
 	set_accelerator
@@ -230,8 +248,9 @@ main() {
 	run_kubeadm
 	patch_kubelet
 	install_network
+	
+	show_node_cmd
 }
-
 
 main
 
