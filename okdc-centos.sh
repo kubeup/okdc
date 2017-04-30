@@ -1,18 +1,20 @@
 #!/bin/sh
 
-VERSION=v1.0
+VERSION=v1.1
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=$(uname -m)
 OS=$(lsb_release -is)
-OS_VERSION=$(rpm -q --queryformat '%{VERSION}' centos-release)
+OS_VERSION=$(rpm -q --queryformat '%{VERSION}' centos-release 2>/dev/null)
 MEM=$(cat /proc/meminfo |grep MemTotal|awk '{print $2}')
 ADMIN_CONF=/etc/kubernetes/admin.conf
 KUBELET_DROPLET=/etc/systemd/system/kubelet.service.d/99-kubelet-droplet.conf
 OKDC_BASE=https://raw.githubusercontent.com/kubeup/okdc/master
 
+
 # User tweakable vars
 REPO=${REPO:-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH}
 REGISTRY_PREFIX=${REGISTRY_PREFIX:-registry.aliyuncs.com/archon}
+DOCKER_MIRROR=${DOCKER_MIRROR:-$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null)}
 K8S_VERSION=${K8S_VERSION:-v1.6.2}
 PAUSE_IMG=${PAUSE_IMG:-$REGISTRY_PREFIX/pause-amd64:3.0}
 HYPERKUBE_IMG=${HYPERKUBE_IMG:-$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION}
@@ -21,26 +23,49 @@ KUBE_ALIYUN_IMG=${KUBE_ALIYUN_IMG:-registry.aliyuncs.com/kubeup/kube-aliyun}
 POD_IP_RANGE=${POD_IP_RANGE:-10.244.0.0/16}
 TOKEN=${TOKEN:-$(python -c 'import random,string as s;t=lambda l:"".join(random.choice(s.ascii_lowercase + s.digits) for _ in range(l));print t(6)+"."+t(16)')}
 
+# Only required for node mode
+MASTER=${MASTER}
+
 readtty() {
 	read "$@" </dev/tty
 }
 
 intro() {
-	cat 1>&2 <<-END
-	OKDC $VERSION by kubeup
-	One-liner Kubernetes Deployment in China
-	http://github.com/kubeup/okdc
+cat <<-END
+OKDC $VERSION by kubeup
+One-liner Kubernetes Deployment in China
+http://github.com/kubeup/okdc
 
-	This will help you provision Kubernetes $K8S_VERSION master on this machine. 
+END
 
-	The following mirrors will be used due to inaccessibility of official resources.
-	$REPO
-	$HYPERKUBE_IMG
-	$ETCD_IMG
+if [ -z "$MASTER" ]; then
+cat <<-END
+This will help you provision Kubernetes $K8S_VERSION master on this machine. 
 
-	You will be prompted to input custom docker hub mirror and preferred network layer.
+The following mirrors will be used due to inaccessibility of official resources.
+$REPO
+$HYPERKUBE_IMG
+$ETCD_IMG
 
-	END
+You will be prompted to input custom docker hub mirror and preferred network layer.
+
+END
+
+else
+cat <<-END
+This will help you provision Kubernetes $K8S_VERSION node on this machine.
+
+The following mirrors will be used due to inaccessibility of official resources.
+$REPO
+$HYPERKUBE_IMG
+
+Master: $MASTER
+Token: $TOKEN
+
+You will be prompted to input custom docker hub mirror
+
+END
+fi
 }
 
 pause() {
@@ -168,11 +193,13 @@ patch_kubelet() {
 	# Due to an issue of kubeadm, we need to switch to cni network after kubeadm is done. #43815
 	sed -i "/kubenet/d" $KUBELET_DROPLET 
 	systemctl daemon-reload
+}
+
+restart_kubelet() {
 	systemctl restart kubelet
 }
 
 set_accelerator() {
-	DOCKER_MIRROR=$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]')
 	if [ -n "$DOCKER_MIRROR" ]; then
 		readtty -p "Docker registry mirror, ex. Aliyun accelerator? (default: $DOCKER_MIRROR) " INPUT
 		[ -z "$INPUT" ] && echo "No changes made to registry mirror" && return
@@ -207,6 +234,10 @@ run_kubeadm() {
 	MASTER_IP=$( grep "kubeadm join" /tmp/kubeadm.log|awk '{print $5}' )
 }
 
+run_kubeadm_node() {
+	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm join --token $TOKEN $MASTER
+}
+
 enable_services() {
 # Disable SELinux 
 	setenforce 0
@@ -219,16 +250,14 @@ enable_services() {
 
 show_node_cmd() {
 	[ -z "$MASTER_IP" ] && exit 3
+  [ -n "$DOCKER_MIRROR" ] && TMP_MIRROR=" DOCKER_MIRROR=$DOCKER_MIRROR"
 	echo
 	echo Run the following command on your nodes to join the cluster
 	echo
-	echo "curl -s $OKDC_BASE/okdc-centos-node.sh|TOKEN=$TOKEN MASTER=$MASTER_IP sh"
+	echo "curl -s $OKDC_BASE/okdc-centos.sh|TOKEN=$TOKEN MASTER=$MASTER_IP$TMP_MIRROR sh"
 }
 
-
-main() {
-	intro
-
+check_env() {
 	if [ "$OS" != "CentOS" ]; then
 		echo "This script only works on CentOS" 1>&2
 		exit 1
@@ -238,20 +267,53 @@ main() {
 		 echo "This script must be run as root" 1>&2
 		 exit 1
 	fi
+}
 
+check_node_prerequisite() {
+  [ -z "$MASTER" ] && echo "MASTER is required but not defined" && exit 4
+  [ -z "$TOKEN" ] && echo "TOKEN is required but not defined" && exit 4
+}
+
+run_master() {
+	intro
+
+  check_env
 	pause
 
 	update_yum
-	update_kubelet
 	set_accelerator
+	update_kubelet
 	enable_services
 	run_kubeadm
 	patch_kubelet
+  restart_kubelet
 	install_network
 	
 	show_node_cmd
+  echo "Done"
 }
 
-main
+run_node() {
+	intro
 
-echo "Done"
+  check_env
+  check_node_prerequisite
+	pause
+
+	update_yum
+	set_accelerator
+	update_kubelet
+  patch_kubelet
+	enable_services
+	run_kubeadm_node
+	
+  echo "Done"
+}
+
+if [ -n "$MASTER" ]; then
+  run_node
+else
+  run_master
+fi
+
+
