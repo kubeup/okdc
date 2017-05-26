@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION=v1.1
+VERSION=v1.2
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=$(uname -m)
 OS=$(lsb_release -is)
@@ -269,6 +269,13 @@ check_env() {
 	fi
 }
 
+update_bridge() {
+  grep "^net.bridge.bridge-nf-call-arptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-arptables = 1" >> /etc/sysctl.conf
+  grep "^net.bridge.bridge-nf-call-iptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
+  grep "^net.bridge.bridge-nf-call-ip6tables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.conf
+  sysctl -p >>/dev/null
+}
+
 check_node_prerequisite() {
   [ -z "$MASTER" ] && echo "MASTER is required but not defined" && exit 4
   [ -z "$TOKEN" ] && echo "TOKEN is required but not defined" && exit 4
@@ -284,6 +291,7 @@ run_master() {
 	set_accelerator
 	update_kubelet
 	enable_services
+	update_bridge
 	run_kubeadm
 	patch_kubelet
   restart_kubelet
@@ -305,6 +313,7 @@ run_node() {
 	update_kubelet
   patch_kubelet
 	enable_services
+	update_bridge
 	run_kubeadm_node
 	
   echo "Done"
