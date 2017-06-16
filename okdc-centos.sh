@@ -80,8 +80,8 @@ install_calico_with_etcd() {
 		[ "$INPUT" != "y" ] && echo "Abort" && exit 3
 	fi
 	wget -O /tmp/calico.yaml http://docs.projectcalico.org/v2.1/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-	sed -i "s/gcr\.io\/google_containers\/etcd:2\.2\.1/$ETCD_IMG/g" /tmp/calico.yaml
-	sed -i "s/quay\.io\///g" /tmp/calico.yaml
+	sed -i "s,gcr\.io/google_containers/etcd:2\.2\.1,$ETCD_IMG,g" /tmp/calico.yaml
+	sed -i "s,quay\.io/,,g" /tmp/calico.yaml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/calico.yaml
 }
 
