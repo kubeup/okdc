@@ -15,6 +15,7 @@ OKDC_BASE=https://raw.githubusercontent.com/kubeup/okdc/master
 REPO=${REPO:-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH}
 REGISTRY_PREFIX=${REGISTRY_PREFIX:-registry.aliyuncs.com/archon}
 DOCKER_MIRROR=${DOCKER_MIRROR:-$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null)}
+DOCKER_MIRROR=${DOCKER_MIRROR:-https://mirror.ccs.tencentyun.com}
 K8S_VERSION=${K8S_VERSION:-v1.6.2}
 PAUSE_IMG=${PAUSE_IMG:-$REGISTRY_PREFIX/pause-amd64:3.0}
 HYPERKUBE_IMG=${HYPERKUBE_IMG:-$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION}
