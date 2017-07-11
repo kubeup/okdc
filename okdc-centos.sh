@@ -227,7 +227,7 @@ run_kubeadm() {
 	kind: MasterConfiguration
 	networking:
 	  podSubnet: $POD_IP_RANGE
-	kubernetesVesion: $K8S_VERSION
+	kubernetesVersion: $K8S_VERSION
 	token: $TOKEN
 	END
 
