@@ -25,6 +25,7 @@ Command for nodes will show up after master is done.
 ## Supported Kubernetes Version
 
 - v1.6.2
+- v1.7.0
 
 ## Caveats
 

@@ -1,6 +1,8 @@
 #!/bin/sh
 
-VERSION=v1.2
+set -e
+
+VERSION=v1.3
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=$(uname -m)
 OS=$(lsb_release -is)
@@ -14,9 +16,10 @@ OKDC_BASE=https://raw.githubusercontent.com/kubeup/okdc/master
 # User tweakable vars
 REPO=${REPO:-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH}
 REGISTRY_PREFIX=${REGISTRY_PREFIX:-registry.aliyuncs.com/archon}
-DOCKER_MIRROR=${DOCKER_MIRROR:-$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null)}
-DOCKER_MIRROR=${DOCKER_MIRROR:-https://mirror.ccs.tencentyun.com}
-K8S_VERSION=${K8S_VERSION:-v1.6.2}
+DOCKER_MIRROR=${DOCKER_MIRROR:-$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null || true)}
+DOCKER_MIRROR=${DOCKER_MIRROR:-https://docker.mirrors.ustc.edu.cn}
+K8S_VERSION=${K8S_VERSION:-v1.7.0}
+KUBEADM_VERSION=${KUBEADM_VERSION:-1.7.0}
 PAUSE_IMG=${PAUSE_IMG:-$REGISTRY_PREFIX/pause-amd64:3.0}
 HYPERKUBE_IMG=${HYPERKUBE_IMG:-$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION}
 ETCD_IMG=${ETCD_IMG:-$REGISTRY_PREFIX/etcd:3.0.17}
@@ -72,6 +75,7 @@ fi
 pause() {
 	readtty -p "Are you sure to continue? (y/N) " INPUT 
 	[ "$INPUT" != "y" ] && echo "Abort" && exit 0
+  true
 }
 
 install_calico_with_etcd() {
@@ -173,7 +177,7 @@ update_yum() {
 
 	# Install stuff
 	yum updateinfo
-	yum install -y kubectl kubernetes-cni docker kubelet kubeadm
+	yum install -y kubectl kubernetes-cni docker kubelet "kubeadm-$KUBEADM_VERSION"
 }
 
 update_kubelet() {
@@ -241,7 +245,7 @@ run_kubeadm_node() {
 
 enable_services() {
 # Disable SELinux 
-	setenforce 0
+	setenforce 0 || true
 
 # Enable services
 	systemctl daemon-reload
