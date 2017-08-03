@@ -1,8 +1,10 @@
 #!/bin/sh
 
+# vim: noet ts=2 
+
 set -e
 
-VERSION=v1.3
+VERSION=v1.3.1
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=$(uname -m)
 OS=$(lsb_release -is)
@@ -25,6 +27,7 @@ HYPERKUBE_IMG=${HYPERKUBE_IMG:-$REGISTRY_PREFIX/hyperkube-amd64:$K8S_VERSION}
 ETCD_IMG=${ETCD_IMG:-$REGISTRY_PREFIX/etcd:3.0.17}
 KUBE_ALIYUN_IMG=${KUBE_ALIYUN_IMG:-registry.aliyuncs.com/kubeup/kube-aliyun}
 POD_IP_RANGE=${POD_IP_RANGE:-10.244.0.0/16}
+APISERVER_ADVERTISE_IP=${APISERVER_ADVERTISE_IP}
 TOKEN=${TOKEN:-$(python -c 'import random,string as s;t=lambda l:"".join(random.choice(s.ascii_lowercase + s.digits) for _ in range(l));print t(6)+"."+t(16)')}
 
 # Only required for node mode
@@ -35,47 +38,47 @@ readtty() {
 }
 
 intro() {
-cat <<-END
-OKDC $VERSION by kubeup
-One-liner Kubernetes Deployment in China
-http://github.com/kubeup/okdc
+	cat <<-END
+	OKDC $VERSION by kubeup
+	One-liner Kubernetes Deployment in China
+	http://github.com/kubeup/okdc
 
-END
+	END
 
-if [ -z "$MASTER" ]; then
-cat <<-END
-This will help you provision Kubernetes $K8S_VERSION master on this machine. 
+	if [ -z "$MASTER" ]; then
+		cat <<-END
+		This will help you provision Kubernetes $K8S_VERSION master on this machine. 
 
-The following mirrors will be used due to inaccessibility of official resources.
-$REPO
-$HYPERKUBE_IMG
-$ETCD_IMG
+		The following mirrors will be used due to inaccessibility of official resources.
+		$REPO
+		$HYPERKUBE_IMG
+		$ETCD_IMG
 
-You will be prompted to input custom docker hub mirror and preferred network layer.
+		You will be prompted to input custom docker hub mirror and preferred network layer.
 
-END
+		END
 
-else
-cat <<-END
-This will help you provision Kubernetes $K8S_VERSION node on this machine.
+	else
+		cat <<-END
+		This will help you provision Kubernetes $K8S_VERSION node on this machine.
 
-The following mirrors will be used due to inaccessibility of official resources.
-$REPO
-$HYPERKUBE_IMG
+		The following mirrors will be used due to inaccessibility of official resources.
+		$REPO
+		$HYPERKUBE_IMG
 
-Master: $MASTER
-Token: $TOKEN
+		Master: $MASTER
+		Token: $TOKEN
 
-You will be prompted to input custom docker hub mirror
+		You will be prompted to input custom docker hub mirror
 
-END
-fi
+		END
+	fi
 }
 
 pause() {
 	readtty -p "Are you sure to continue? (y/N) " INPUT 
 	[ "$INPUT" != "y" ] && echo "Abort" && exit 0
-  true
+	true
 }
 
 install_calico_with_etcd() {
@@ -124,21 +127,21 @@ install_network() {
 }
 
 setup_aliyun() {
-#readtty -n 1 -p "Deploy kube-aliyun as well? (to enable SLB, Routes and Volumes support) (Y/n)? " ENABLE_KUBE_ALIYUN
-#[ -z $ENABLE_KUBE_ALIYUN ] && ENABLE_KUBE_ALIYUN=y
-#
-#if [ "$ENABLE_KUBE_ALIYUN" = "y" ]; then
-#  [ -n "$ALIYUN_ACCESS_KEY" ] && KEY_DEFAULT="(default: $ALIYUN_ACCESS_KEY)"
-#  readtty -p "Aliyun Access Key?$KEY_DEFAULT " INPUT
-#  ALIYUN_ACCESS_KEY=${INPUT:-$ALIYUN_ACCESS_KEY}
-#  [ -z "$ALIYUN_ACCESS_KEY" ] && echo "Can't proceed without it" && exit 2
-#
-#  unset KEY_DEFAULT
-#  [ -n "$ALIYUN_ACCESS_KEY_SECRET" ] && KEY_DEFAULT="(default: $ALIYUN_ACCESS_KEY_SECRET)"
-#  readtty -p "Aliyun Access Key Secret?$KEY_DEFAULT " INPUT
-#  ALIYUN_ACCESS_KEY_SECRET=${INPUT:-$ALIYUN_ACCESS_KEY_SECRET}
-#  [ -z "$ALIYUN_ACCESS_KEY_SECRET" ] && echo "Can't proceed without it" && exit 2
-#fi
+	#readtty -n 1 -p "Deploy kube-aliyun as well? (to enable SLB, Routes and Volumes support) (Y/n)? " ENABLE_KUBE_ALIYUN
+	#[ -z $ENABLE_KUBE_ALIYUN ] && ENABLE_KUBE_ALIYUN=y
+	#
+	#if [ "$ENABLE_KUBE_ALIYUN" = "y" ]; then
+	#  [ -n "$ALIYUN_ACCESS_KEY" ] && KEY_DEFAULT="(default: $ALIYUN_ACCESS_KEY)"
+	#  readtty -p "Aliyun Access Key?$KEY_DEFAULT " INPUT
+	#  ALIYUN_ACCESS_KEY=${INPUT:-$ALIYUN_ACCESS_KEY}
+	#  [ -z "$ALIYUN_ACCESS_KEY" ] && echo "Can't proceed without it" && exit 2
+	#
+	#  unset KEY_DEFAULT
+	#  [ -n "$ALIYUN_ACCESS_KEY_SECRET" ] && KEY_DEFAULT="(default: $ALIYUN_ACCESS_KEY_SECRET)"
+	#  readtty -p "Aliyun Access Key Secret?$KEY_DEFAULT " INPUT
+	#  ALIYUN_ACCESS_KEY_SECRET=${INPUT:-$ALIYUN_ACCESS_KEY_SECRET}
+	#  [ -z "$ALIYUN_ACCESS_KEY_SECRET" ] && echo "Can't proceed without it" && exit 2
+	#fi
 	echo
 }
 
@@ -229,6 +232,8 @@ run_kubeadm() {
 	cat >/tmp/kubeadm.conf <<-END
 	apiVersion: kubeadm.k8s.io/v1alpha1
 	kind: MasterConfiguration
+	api:
+	  advertiseAddress: $APISERVER_ADVERTISE_IP
 	networking:
 	  podSubnet: $POD_IP_RANGE
 	kubernetesVersion: $K8S_VERSION
@@ -244,10 +249,10 @@ run_kubeadm_node() {
 }
 
 enable_services() {
-# Disable SELinux 
+	# Disable SELinux 
 	setenforce 0 || true
 
-# Enable services
+	# Enable services
 	systemctl daemon-reload
 	systemctl enable docker && systemctl start docker
 	systemctl enable kubelet && systemctl start kubelet
@@ -275,59 +280,78 @@ check_env() {
 }
 
 update_bridge() {
-  grep "^net.bridge.bridge-nf-call-arptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-arptables = 1" >> /etc/sysctl.conf
-  grep "^net.bridge.bridge-nf-call-iptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
-  grep "^net.bridge.bridge-nf-call-ip6tables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.conf
-  sysctl -p >>/dev/null
+	grep "^net.bridge.bridge-nf-call-arptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-arptables = 1" >> /etc/sysctl.conf
+	grep "^net.bridge.bridge-nf-call-iptables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.conf
+	grep "^net.bridge.bridge-nf-call-ip6tables" /etc/sysctl.conf >>/dev/null || echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.conf
+	sysctl -p >>/dev/null
 }
 
 check_node_prerequisite() {
-  [ -z "$MASTER" ] && echo "MASTER is required but not defined" && exit 4
-  [ -z "$TOKEN" ] && echo "TOKEN is required but not defined" && exit 4
+	[ -z "$MASTER" ] && echo "MASTER is required but not defined" && exit 4
+	[ -z "$TOKEN" ] && echo "TOKEN is required but not defined" && exit 4
+	true
+}
+
+detect_advertise_ip() {
+	if [ -z "$APISERVER_ADVERTISE_IP" ]; then
+		ips=$(ip -4 -o addr show|grep eth|awk '{print $4}')
+		for i in $ips; do
+			ret=$(echo $i|grep -E '^(192\.168|10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.)[^ /]+' -o) 
+			[ -n "$ret" ] && APISERVER_ADVERTISE_IP="$ret" && break
+		done
+	fi
+
+	if [ -z "$APISERVER_ADVERTISE_IP" ]; then
+		echo "Failed to detect private ip. Will let kubeadm decide which ip to advertise."
+	else
+		echo "Using $APISERVER_ADVERTISE_IP as advertise ip"
+	fi
+	true
 }
 
 run_master() {
 	intro
 
-  check_env
+	check_env
 	pause
 
 	update_yum
+	detect_advertise_ip
 	set_accelerator
 	update_kubelet
 	enable_services
 	update_bridge
 	run_kubeadm
 	patch_kubelet
-  restart_kubelet
+	restart_kubelet
 	install_network
-	
+
 	show_node_cmd
-  echo "Done"
+	echo "Done"
 }
 
 run_node() {
 	intro
 
-  check_env
-  check_node_prerequisite
+	check_env
+	check_node_prerequisite
 	pause
 
 	update_yum
 	set_accelerator
 	update_kubelet
-  patch_kubelet
+	patch_kubelet
 	enable_services
 	update_bridge
 	run_kubeadm_node
-	
-  echo "Done"
+
+	echo "Done"
 }
 
 if [ -n "$MASTER" ]; then
-  run_node
+	run_node
 else
-  run_master
+	run_master
 fi
 
 
