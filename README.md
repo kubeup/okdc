@@ -18,6 +18,10 @@ Run on master:
 
 Command for nodes will show up after master is done.
 
+If you want to install non-interactively, use
+
+`curl -s https://raw.githubusercontent.com/kubeup/okdc/master/okdc-centos.sh|NOINPUT=true sh`
+
 ## Supported OS
 
 - CentOS x86_64 6/7

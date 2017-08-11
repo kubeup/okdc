@@ -4,10 +4,14 @@
 
 set -e
 
-VERSION=v1.3.1
+PREREQUISITES="uname rpm yum python"
+for cmd in $PREREQUISITES; do
+	which $cmd >/dev/null || (echo "$cmd is required to run okdc" && exit 9)
+done
+
+VERSION=v1.4.1
 GPG_FILE=RPM-GPG-KEY-k8s
 ARCH=$(uname -m)
-OS=$(lsb_release -is)
 OS_VERSION=$(rpm -q --queryformat '%{VERSION}' centos-release 2>/dev/null)
 MEM=$(cat /proc/meminfo |grep MemTotal|awk '{print $2}')
 ADMIN_CONF=/etc/kubernetes/admin.conf
@@ -16,10 +20,13 @@ OKDC_BASE=https://raw.githubusercontent.com/kubeup/okdc/master
 
 
 # User tweakable vars
+NOINPUT=${NOINPUT}
+NETWORK=${NETWORK} # If it's user supplied, perform without prompt
+DEFAULT_NOINPUT_NETWORK=flannel
 REPO=${REPO:-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el$OS_VERSION-$ARCH}
 REGISTRY_PREFIX=${REGISTRY_PREFIX:-registry.aliyuncs.com/archon}
-DOCKER_MIRROR=${DOCKER_MIRROR:-$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null || true)}
-DOCKER_MIRROR=${DOCKER_MIRROR:-https://docker.mirrors.ustc.edu.cn}
+USER_DOCKER_MIRROR=$(python -c 'import json; d=json.load(open("/etc/docker/daemon.json")); print d.get("registry-mirrors",[])[0]' 2>/dev/null || true)
+DOCKER_MIRROR=${DOCKER_MIRROR:-${USER_DOCKER_MIRROR:-https://docker.mirrors.ustc.edu.cn}}
 K8S_VERSION=${K8S_VERSION:-v1.7.0}
 KUBEADM_VERSION=${KUBEADM_VERSION:-1.7.0}
 PAUSE_IMG=${PAUSE_IMG:-$REGISTRY_PREFIX/pause-amd64:3.0}
@@ -34,6 +41,12 @@ TOKEN=${TOKEN:-$(python -c 'import random,string as s;t=lambda l:"".join(random.
 MASTER=${MASTER}
 
 readtty() {
+	for varname; do true; done
+	if [ -n "$NOINPUT" ]; then
+		declare -g $varname=$NOINPUT_DEFAULT
+		return 0
+	fi
+
 	read "$@" </dev/tty
 }
 
@@ -54,10 +67,10 @@ intro() {
 		$HYPERKUBE_IMG
 		$ETCD_IMG
 
-		You will be prompted to input custom docker hub mirror and preferred network layer.
-
 		END
 
+		[ -z "$NOINPUT" ] && echo You will be prompted to input custom docker hub mirror and preferred network layer.
+		echo
 	else
 		cat <<-END
 		This will help you provision Kubernetes $K8S_VERSION node on this machine.
@@ -68,15 +81,16 @@ intro() {
 
 		Master: $MASTER
 		Token: $TOKEN
-
-		You will be prompted to input custom docker hub mirror
-
+		
 		END
+
+		[ -z "$NOINPUT" ] && echo You will be prompted to input custom docker hub mirror
+		echo
 	fi
 }
 
 pause() {
-	readtty -p "Are you sure to continue? (y/N) " INPUT 
+	NOINPUT_DEFAULT=y readtty -p "Are you sure to continue? (y/N) " INPUT 
 	[ "$INPUT" != "y" ] && echo "Abort" && exit 0
 	true
 }
@@ -84,13 +98,14 @@ pause() {
 install_calico_with_etcd() {
 	[ -z "$DOCKER_MIRROR" ] && echo "Can't install Calico without a docker mirror. Abort" && exit 3
 	if [ $MEM -lt 1500000 ]; then
-		readtty -n1 -p "Your memory is not really enough for running k8s master with Calico. This will result in serious performance issues. Are you sure? (y/N) " INPUT
+		NOINPUT_DEFAULT=y readtty -n1 -p "Your memory is not really enough for running k8s master with Calico. This will result in serious performance issues. Are you sure? (y/N) " INPUT
 		[ "$INPUT" != "y" ] && echo "Abort" && exit 3
 	fi
 	wget -O /tmp/calico.yaml http://docs.projectcalico.org/v2.1/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
 	sed -i "s,gcr\.io/google_containers/etcd:2\.2\.1,$ETCD_IMG,g" /tmp/calico.yaml
 	sed -i "s,quay\.io/,,g" /tmp/calico.yaml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/calico.yaml
+	return 0
 }
 
 install_flannel() {
@@ -98,9 +113,29 @@ install_flannel() {
 	sed -i "s/quay\.io\/coreos/${REGISTRY_PREFIX//\//\\/}/g" /tmp/flannel.yaml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel-rbac.yml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/flannel.yaml
+	return 0
 }
 
 install_network() {
+	if [ -n "$NOINPUT" ]; then
+		NETWORK=${NETWORK:-$DEFAULT_NOINPUT_NETWORK}
+	fi
+	if [ -n "$NETWORK" ]; then
+		case $NETWORK in
+			flannel)
+				install_flannel
+				;;
+			calico)
+				install_calico_with_etcd
+				;;
+			*)
+				echo -e "Bad network $NETWORK. Will skip"
+				;;
+		esac
+		return 0;
+	fi
+
+	# Prompt
 	while :; do
 		echo "Available network layer:"
 		echo "1) Flannel"
@@ -124,6 +159,7 @@ install_network() {
 		break
 	done
 	echo
+	return 0
 }
 
 setup_aliyun() {
@@ -209,15 +245,14 @@ restart_kubelet() {
 
 set_accelerator() {
 	if [ -n "$DOCKER_MIRROR" ]; then
-		readtty -p "Docker registry mirror, ex. Aliyun accelerator? (default: $DOCKER_MIRROR) " INPUT
-		[ -z "$INPUT" ] && echo "No changes made to registry mirror" && return
-		DOCKER_MIRROR=$INPUT
+		NOINPUT_DEFAULT="${DOCKER_MIRROR}" readtty -p "Docker registry mirror, ex. Aliyun accelerator? (default: $DOCKER_MIRROR) " INPUT
+		[ -n "$INPUT" ] && DOCKER_MIRROR=$INPUT
 	else
-		readtty -p "Docker registry mirror, ex. Aliyun accelerator? (empty to skip) " DOCKER_MIRROR
+		NOINPUT_DEFAULT="" readtty -p "Docker registry mirror, ex. Aliyun accelerator? (empty to skip) " DOCKER_MIRROR
 	fi
 
-# Docker accelerator
-	if [ -n "$DOCKER_MIRROR" ]; then
+	# Docker accelerator
+	if [ -n "$DOCKER_MIRROR" ] && [ "$DOCKER_MIRROR" != "$USER_DOCKER_MIRROR" ]; then
 		mkdir -p /etc/docker
 		cat >/etc/docker/daemon.json <<-END
 		{
@@ -225,6 +260,8 @@ set_accelerator() {
 		}
 		END
 	fi
+
+	true
 }
 
 run_kubeadm() {
@@ -260,19 +297,15 @@ enable_services() {
 
 show_node_cmd() {
 	[ -z "$MASTER_IP" ] && exit 3
-  [ -n "$DOCKER_MIRROR" ] && TMP_MIRROR=" DOCKER_MIRROR=$DOCKER_MIRROR"
+	[ -n "$DOCKER_MIRROR" ] && TMP_MIRROR=" DOCKER_MIRROR=$DOCKER_MIRROR"
+	[ -n "$NOINPUT" ] && TMP_NOINPUT=" NOINPUT=$NOINPUT"
 	echo
 	echo Run the following command on your nodes to join the cluster
 	echo
-	echo "curl -s $OKDC_BASE/okdc-centos.sh|TOKEN=$TOKEN MASTER=$MASTER_IP$TMP_MIRROR sh"
+	echo "curl -s $OKDC_BASE/okdc-centos.sh|TOKEN=$TOKEN MASTER=$MASTER_IP$TMP_MIRROR$TMP_NOINPUT sh"
 }
 
 check_env() {
-	if [ "$OS" != "CentOS" ]; then
-		echo "This script only works on CentOS" 1>&2
-		exit 1
-	fi
-
 	if [ "$(id -u)" != "0" ]; then
 		 echo "This script must be run as root" 1>&2
 		 exit 1
