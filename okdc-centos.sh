@@ -286,16 +286,18 @@ set_accelerator() {
 
 run_kubeadm() {
 	# Kubeadm config
-	cat >/tmp/kubeadm.conf <<-END
-	apiVersion: kubeadm.k8s.io/v1alpha1
-	kind: MasterConfiguration
-	api:
-	  advertiseAddress: $APISERVER_ADVERTISE_IP
-	networking:
-	  podSubnet: $POD_IP_RANGE
-	kubernetesVersion: $K8S_VERSION
-	token: $TOKEN
-	END
+	if [ ! -f /tmp/kubeadm.conf ]; then
+	  cat >/tmp/kubeadm.conf <<-END
+	  apiVersion: kubeadm.k8s.io/v1alpha1
+	  kind: MasterConfiguration
+	  api:
+	    advertiseAddress: $APISERVER_ADVERTISE_IP
+	  networking:
+	    podSubnet: $POD_IP_RANGE
+	  kubernetesVersion: $K8S_VERSION
+	  token: $TOKEN
+	  END
+	fi
 
 	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_ETCD_IMAGE=$ETCD_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm init --skip-preflight-checks --config /tmp/kubeadm.conf |tee /tmp/kubeadm.log
 	MASTER_IP=$( grep "kubeadm join" /tmp/kubeadm.log|awk '{print $5}' )
