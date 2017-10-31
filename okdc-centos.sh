@@ -122,9 +122,9 @@ install_calico_with_kdd() {
 }
 
 install_flannel() {
-	wget -O /tmp/flannel.yaml https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+	wget -O /tmp/flannel.yaml https://raw.githubusercontent.com/coreos/flannel/v0.8.0/Documentation/kube-flannel.yml
 	sed -i "s/quay\.io\/coreos/${REGISTRY_PREFIX//\//\\/}/g" /tmp/flannel.yaml
-	kubectl --kubeconfig=$ADMIN_CONF apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel-rbac.yml
+	kubectl --kubeconfig=$ADMIN_CONF apply -f https://raw.githubusercontent.com/coreos/flannel/v0.8.0/Documentation/kube-flannel-rbac.yml
 	kubectl --kubeconfig=$ADMIN_CONF apply -f /tmp/flannel.yaml
 	return 0
 }
@@ -287,16 +287,16 @@ set_accelerator() {
 run_kubeadm() {
 	# Kubeadm config
 	if [ ! -f /tmp/kubeadm.conf ]; then
-	  cat >/tmp/kubeadm.conf <<-END
-	  apiVersion: kubeadm.k8s.io/v1alpha1
-	  kind: MasterConfiguration
-	  api:
-	    advertiseAddress: $APISERVER_ADVERTISE_IP
-	  networking:
-	    podSubnet: $POD_IP_RANGE
-	  kubernetesVersion: $K8S_VERSION
-	  token: $TOKEN
-	  END
+		cat >/tmp/kubeadm.conf <<-END
+		apiVersion: kubeadm.k8s.io/v1alpha1
+		kind: MasterConfiguration
+		api:
+		  advertiseAddress: $APISERVER_ADVERTISE_IP
+		networking:
+		  podSubnet: $POD_IP_RANGE
+		kubernetesVersion: $K8S_VERSION
+		token: $TOKEN
+		END
 	fi
 
 	KUBE_HYPERKUBE_IMAGE=$HYPERKUBE_IMG KUBE_ETCD_IMAGE=$ETCD_IMG KUBE_REPO_PREFIX=$REGISTRY_PREFIX kubeadm init --skip-preflight-checks --config /tmp/kubeadm.conf |tee /tmp/kubeadm.log
